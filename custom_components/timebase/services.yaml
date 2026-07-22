@@ -1,0 +1,35 @@
+flush:
+  name: Flush export buffer
+  description: >-
+    Immediately write all buffered state changes to the Timebase historian
+    instead of waiting for the next flush interval.
+
+write:
+  name: Write tag value
+  description: >-
+    Write a single value to a Timebase tag. Useful for historizing computed
+    values (template results, script outputs) that are not entities.
+  fields:
+    tag:
+      name: Tag
+      description: Timebase tag name (created on first write if missing).
+      required: true
+      example: "ha.computed.pool_heat_loss_kwh"
+      selector:
+        text:
+    value:
+      name: Value
+      description: Numeric, boolean, or string value to write.
+      required: true
+      example: 3.7
+      selector:
+        text:
+    timestamp:
+      name: Timestamp
+      description: >-
+        Optional timestamp for the sample (defaults to now). Must be newer
+        than the tag's latest stored point — Timebase ignores out-of-order
+        writes.
+      required: false
+      selector:
+        datetime:

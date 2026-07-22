@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Timebase Historian",
+        "description": "Point at a Flow Software Timebase historian's REST API (default port 4511). The dataset is created if it does not exist. If your system is secured with Timebase Pulse, fill in all three Pulse fields.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "dataset": "Dataset name",
+          "retention_days": "Retention (days)",
+          "use_ssl": "Use HTTPS",
+          "verify_ssl": "Verify SSL certificate",
+          "pulse_url": "Pulse URL (optional)",
+          "pulse_client_id": "Pulse client ID",
+          "pulse_client_secret": "Pulse client secret"
+        },
+        "data_description": {
+          "dataset": "Timebase dataset that will hold Home Assistant data.",
+          "retention_days": "Purge age applied when the dataset is created.",
+          "use_ssl": "Timebase deployed with Pulse redirects HTTP to HTTPS — enable this and use the HTTPS port (default 4512).",
+          "verify_ssl": "Disable for Timebase's self-signed certificate.",
+          "pulse_url": "Base URL of your Timebase Pulse identity provider, e.g. http://pulse-host:PORT. The OAuth token endpoint is discovered automatically.",
+          "pulse_client_id": "A Pulse client allowed the client-credentials grant with the Historian audience (e.g. the built-in Collector client, or a dedicated HomeAssistant client).",
+          "pulse_client_secret": "The secret for that Pulse client."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the historian or Pulse — check host, port, and firewall.",
+      "invalid_auth": "Pulse rejected the client credentials, or the historian rejected the token (check the client's allowed audience).",
+      "pulse_incomplete": "Provide all of Pulse URL, client ID, and client secret — or none of them.",
+      "invalid_response": "The historian replied with an error — check the version and configuration.",
+      "unknown": "Unexpected error — see logs."
+    },
+    "abort": {
+      "already_configured": "This historian and dataset are already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Timebase export & import",
+        "description": "Export streams HA state changes into the historian. Import surfaces Timebase tags back into HA as long-term statistics or live sensors.",
+        "data": {
+          "export_enabled": "Export state changes to Timebase",
+          "tag_prefix": "Tag prefix",
+          "include_domains": "Include domains (empty = all)",
+          "include_entity_globs": "Include entity globs",
+          "exclude_entity_globs": "Exclude entity globs",
+          "export_string_states": "Export non-numeric states as strings",
+          "import_tags": "Measurement tags to import as statistics",
+          "import_counter_tags": "Counter tags to import as statistics",
+          "live_tags": "Tags to expose as live sensors"
+        },
+        "data_description": {
+          "tag_prefix": "Tags are named <prefix>.<entity_id>, e.g. ha.sensor.pool_temp.",
+          "include_domains": "With no includes set, everything not excluded is exported.",
+          "import_tags": "Hourly mean/min/max — temperatures, pressures, rates. Use for tags from other collectors, not tags exported from HA.",
+          "import_counter_tags": "Cumulative meters (energy, water, gas) — imported as hourly state + sum, meter-reset aware, usable in the Energy dashboard.",
+          "live_tags": "Each tag becomes a sensor entity polling the latest value."
+        }
+      }
+    }
+  },
+  "services": {
+    "flush": {
+      "name": "Flush export buffer",
+      "description": "Immediately write buffered state changes to the historian."
+    },
+    "write": {
+      "name": "Write tag value",
+      "description": "Write a single value to a Timebase tag.",
+      "fields": {
+        "tag": { "name": "Tag", "description": "Timebase tag name." },
+        "value": { "name": "Value", "description": "Value to write." },
+        "timestamp": { "name": "Timestamp", "description": "Optional sample time (defaults to now)." }
+      }
+    }
+  }
+}
