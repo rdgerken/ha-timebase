@@ -88,13 +88,33 @@ with the **Historian** audience — a fresh Pulse instance pre-creates suitable
 clients (the Collector client fits; a dedicated `HomeAssistant` client is
 cleaner). Configure:
 
-- **Pulse URL** — base URL of the Pulse server; the token endpoint is found
-  via standard OIDC discovery (`/.well-known/openid-configuration`), with
-  `/connect/token` and `/oauth/token` as fallbacks.
+- **Pulse URL** — base URL of the Pulse server, e.g. `https://pulse-host:4542`.
+  Pulse nests its IdP under `/auth` (discovery at
+  `/auth/.well-known/openid-configuration`, tokens at `/auth/token`); the
+  integration finds it automatically from the bare base URL.
 - **Client ID / secret** — from the Pulse client.
 
 Tokens are cached, refreshed ~60 s before expiry, and re-fetched once
 automatically if the historian returns 401.
+
+### Enabling auth on a fresh Timebase stack (verified on 1.3.x)
+
+Auth ships **disabled**. To turn it on you need three things, or the
+historian rejects every token with issuer errors (IDX10204):
+
+1. **Pulse settings** (`/settings/settings.config` in the Pulse container):
+   replace the `Auth.Issuer` placeholder (`https://<YourIssuerDomain>`) with
+   a real value, e.g. `https://pulse:4542`.
+2. **Historian settings**: set `Auth.Enabled: true` and `Auth.ClientSecret`
+   to the Historian client's secret (Pulse stores the generated client
+   secrets in its `config/clients.config`, MessagePack-encoded).
+3. **TLS hostname**: the historian validates Pulse's certificate against the
+   host it dials (`Auth.IdP.Host`). Pulse mints its cert SANs from its
+   *machine hostname* — in Docker, set `hostname: pulse` on the Pulse
+   container (matching the historian's `IdP.Host`) and delete the generated
+   leaf cert (`certificates/timebase-generated.pfx`, keep the `-ca` files)
+   so it re-mints with the right SAN. Then restart the historian so it
+   re-fetches the discovery metadata.
 
 ## Known limitations (v0.2)
 

@@ -5,10 +5,12 @@ client-credentials grant; a new Pulse instance pre-creates clients (Historian,
 Collector, Explorer) whose tokens carry an audience ("aud") claim the
 Historian validates.
 
-The token endpoint is resolved via standard OIDC discovery
-(/.well-known/openid-configuration) against the configured Pulse base URL,
-with conventional fallbacks (/connect/token, /oauth/token) if discovery is
-unavailable. Tokens are cached and refreshed shortly before expiry.
+Pulse serves its OIDC endpoints under an /auth path prefix (verified against
+a live Pulse 1.3.x): discovery at /auth/.well-known/openid-configuration and
+tokens at /auth/token. The token endpoint is resolved via discovery against
+the configured base URL (bare host:port and .../auth forms both work), with
+path fallbacks if discovery is unavailable. Tokens are cached and refreshed
+shortly before expiry.
 """
 
 from __future__ import annotations
@@ -24,8 +26,12 @@ from .api import REQUEST_TIMEOUT, TimebaseConnectionError, TimebaseError
 
 _LOGGER = logging.getLogger(__name__)
 
-DISCOVERY_PATH = "/.well-known/openid-configuration"
-FALLBACK_TOKEN_PATHS = ("/connect/token", "/oauth/token")
+# Pulse nests its IdP under /auth; try the bare base too in case that changes.
+DISCOVERY_PATHS = (
+    "/auth/.well-known/openid-configuration",
+    "/.well-known/openid-configuration",
+)
+FALLBACK_TOKEN_PATHS = ("/auth/token", "/connect/token", "/oauth/token")
 DEFAULT_AUDIENCE = "Historian"
 TOKEN_REFRESH_MARGIN_SECONDS = 60
 DEFAULT_TOKEN_LIFETIME_SECONDS = 3600
@@ -79,31 +85,39 @@ class PulseAuth:
 
     async def _async_discover_token_endpoint(self) -> str | None:
         """Resolve the token endpoint via OIDC discovery."""
-        url = f"{self._base}{DISCOVERY_PATH}"
-        try:
-            async with self._session.get(
-                url, timeout=REQUEST_TIMEOUT, **self._ssl_kwargs
-            ) as resp:
-                if resp.status != 200:
-                    return None
-                doc: dict[str, Any] = await resp.json(content_type=None)
-                endpoint = doc.get("token_endpoint")
-                if endpoint:
-                    _LOGGER.debug("Pulse token endpoint discovered: %s", endpoint)
-                return endpoint
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-            return None
+        # If the user already included /auth in the base, don't double it.
+        bases = [self._base]
+        if not self._base.endswith("/auth"):
+            bases.insert(0, f"{self._base}/auth")
+        for base in bases:
+            url = f"{base}/.well-known/openid-configuration"
+            try:
+                async with self._session.get(
+                    url, timeout=REQUEST_TIMEOUT, **self._ssl_kwargs
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    doc: dict[str, Any] = await resp.json(content_type=None)
+                    if endpoint := doc.get("token_endpoint"):
+                        _LOGGER.debug(
+                            "Pulse token endpoint discovered: %s", endpoint
+                        )
+                        return endpoint
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                continue
+        return None
 
     async def _async_fetch_token(self) -> None:
         """Fetch a fresh token, resolving the endpoint on first use."""
         if self._token_endpoint is None:
             self._token_endpoint = await self._async_discover_token_endpoint()
 
-        candidates = (
-            [self._token_endpoint]
-            if self._token_endpoint
-            else [f"{self._base}{path}" for path in FALLBACK_TOKEN_PATHS]
-        )
+        if self._token_endpoint:
+            candidates = [self._token_endpoint]
+        elif self._base.endswith("/auth"):
+            candidates = [f"{self._base}/token"]
+        else:
+            candidates = [f"{self._base}{path}" for path in FALLBACK_TOKEN_PATHS]
 
         form = {
             "grant_type": "client_credentials",
