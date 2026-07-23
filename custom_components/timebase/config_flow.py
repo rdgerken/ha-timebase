@@ -30,6 +30,7 @@ from .const import (
     CONF_USE_SSL,
     CONF_VERIFY_SSL,
     CONF_EXCLUDE_ENTITY_GLOBS,
+    CONF_EXPORT_ATTRIBUTES,
     CONF_EXPORT_ENABLED,
     CONF_EXPORT_STRING_STATES,
     CONF_IMPORT_COUNTER_TAGS,
@@ -183,6 +184,10 @@ class TimebaseOptionsFlow(OptionsFlow):
                     CONF_EXPORT_STRING_STATES,
                     default=opts.get(CONF_EXPORT_STRING_STATES, False),
                 ): BooleanSelector(),
+                vol.Optional(
+                    CONF_EXPORT_ATTRIBUTES,
+                    default=opts.get(CONF_EXPORT_ATTRIBUTES, []),
+                ): multi_text,
                 vol.Optional(
                     CONF_IMPORT_TAGS,
                     default=opts.get(CONF_IMPORT_TAGS, []),

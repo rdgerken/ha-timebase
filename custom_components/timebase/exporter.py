@@ -15,6 +15,8 @@ Design notes:
 from __future__ import annotations
 
 import logging
+import re
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import timedelta
@@ -29,6 +31,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.entityfilter import EntityFilter
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
@@ -45,6 +48,29 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+ISSUE_OVERFLOW = "buffer_overflow"
+ISSUE_WRITE_FAILURE = "write_failure"
+WRITE_FAILURE_ISSUE_AFTER_SECONDS = 900
+
+
+def _slug(name: str) -> str:
+    """Sanitize an attribute name into a tag path segment."""
+    return re.sub(r"[^a-z0-9_]", "_", name.lower())
+
+
+def _coerce_numeric(value: Any) -> float | None:
+    """Best-effort numeric coercion for attribute values."""
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
 
 class TimebaseExporter:
     """Buffers state changes and batch-writes them to the historian."""
@@ -57,6 +83,8 @@ class TimebaseExporter:
         tag_prefix: str,
         entity_filter: EntityFilter,
         export_string_states: bool = False,
+        export_attributes: list[str] | None = None,
+        entry_id: str = "",
     ) -> None:
         self._hass = hass
         self._client = client
@@ -64,6 +92,8 @@ class TimebaseExporter:
         self._prefix = tag_prefix
         self._filter = entity_filter
         self._export_strings = export_string_states
+        self._attr_names = export_attributes or []
+        self._entry_id = entry_id
 
         self._buffer: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self._buffered_count = 0
@@ -77,6 +107,9 @@ class TimebaseExporter:
         self.samples_sent = 0
         self.samples_dropped = 0
         self.last_error: str | None = None
+        self._first_failure: float | None = None
+        self._overflow_issue = False
+        self._failure_issue = False
 
     # --- Lifecycle ----------------------------------------------------------
 
@@ -117,13 +150,12 @@ class TimebaseExporter:
         entity_id = new_state.entity_id
         if not self._filter(entity_id):
             return
-        # Attribute-only churn: same state value → no new historian point.
-        if old_state is not None and old_state.state == new_state.state:
-            return
-
         tag = f"{self._prefix}.{entity_id}"
 
         if new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE, ""):
+            # Repeated unavailable events (attribute churn while down): one marker only.
+            if old_state is not None and old_state.state == new_state.state:
+                return
             # Industrial convention: hold the last known value and flag the
             # sample bad-quality (24 = source comms lost) so trends show the
             # gap explicitly instead of silently interpolating across it.
@@ -140,6 +172,15 @@ class TimebaseExporter:
                 }
             )
             self._buffered_count += 1
+            self._enforce_bound()
+            return
+
+        # Configured attribute exports — fire on attribute-only changes too.
+        if self._attr_names:
+            self._queue_attributes(entity_id, old_state, new_state)
+
+        # Attribute-only churn: same state value → no new state point.
+        if old_state is not None and old_state.state == new_state.state:
             self._enforce_bound()
             return
 
@@ -165,6 +206,28 @@ class TimebaseExporter:
         self._buffered_count += 1
         self._enforce_bound()
 
+    @callback
+    def _queue_attributes(self, entity_id, old_state, new_state) -> None:
+        """Buffer numeric values of configured attributes when they change."""
+        friendly = new_state.attributes.get(ATTR_FRIENDLY_NAME, entity_id)
+        for attr in self._attr_names:
+            raw = new_state.attributes.get(attr)
+            value = _coerce_numeric(raw)
+            if value is None:
+                continue
+            if old_state is not None and old_state.attributes.get(attr) == raw:
+                continue  # unchanged
+            atag = f"{self._prefix}.{entity_id}.{_slug(attr)}"
+            self._tag_meta[atag] = {"n": atag, "d": f"{friendly} · {attr}"}
+            self._buffer[atag].append(
+                {
+                    "t": iso_z(new_state.last_updated),
+                    "v": value,
+                    "q": QUALITY_GOOD,
+                }
+            )
+            self._buffered_count += 1
+
     def _convert_state(self, state: str) -> float | str | None:
         """Map an HA state string to a TVQ value, or None to skip."""
         mapped = BINARY_STATE_MAP.get(state.lower())
@@ -177,15 +240,28 @@ class TimebaseExporter:
 
     def _enforce_bound(self) -> None:
         """Drop oldest samples when the store-and-forward buffer overflows."""
+        dropped_now = False
         while self._buffered_count > MAX_BUFFERED_TVQS:
             for tag, tvqs in self._buffer.items():
                 if tvqs:
                     tvqs.pop(0)
                     self._buffered_count -= 1
                     self.samples_dropped += 1
+                    dropped_now = True
                     break
             else:
                 break
+        if dropped_now and not self._overflow_issue:
+            self._overflow_issue = True
+            ir.async_create_issue(
+                self._hass,
+                "timebase",
+                f"{ISSUE_OVERFLOW}_{self._entry_id}",
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_OVERFLOW,
+                translation_placeholders={"dataset": self._dataset},
+            )
 
     # --- Flushing -----------------------------------------------------------
 
@@ -221,8 +297,37 @@ class TimebaseExporter:
             await self._client.async_write(self._dataset, payload)
             self.samples_sent += count
             self.last_error = None
+            self._first_failure = None
+            if self._overflow_issue or self._failure_issue:
+                ir.async_delete_issue(
+                    self._hass, "timebase", f"{ISSUE_OVERFLOW}_{self._entry_id}"
+                )
+                ir.async_delete_issue(
+                    self._hass, "timebase", f"{ISSUE_WRITE_FAILURE}_{self._entry_id}"
+                )
+                self._overflow_issue = self._failure_issue = False
         except Exception as err:  # noqa: BLE001 — keep the loop alive
             self.last_error = str(err)
+            if self._first_failure is None:
+                self._first_failure = time.monotonic()
+            elif (
+                not self._failure_issue
+                and time.monotonic() - self._first_failure
+                > WRITE_FAILURE_ISSUE_AFTER_SECONDS
+            ):
+                self._failure_issue = True
+                ir.async_create_issue(
+                    self._hass,
+                    "timebase",
+                    f"{ISSUE_WRITE_FAILURE}_{self._entry_id}",
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.ERROR,
+                    translation_key=ISSUE_WRITE_FAILURE,
+                    translation_placeholders={
+                        "dataset": self._dataset,
+                        "error": str(err),
+                    },
+                )
             _LOGGER.warning(
                 "Timebase flush of %d samples failed, will retry: %s",
                 count,

@@ -49,6 +49,7 @@
           "include_entity_globs": "Include entity globs",
           "exclude_entity_globs": "Exclude entity globs",
           "export_string_states": "Export non-numeric states as strings",
+          "export_attributes": "Attributes to export (numeric)",
           "import_tags": "Measurement tags to import as statistics",
           "import_counter_tags": "Counter tags to import as statistics",
           "live_tags": "Tags to expose as live sensors"
@@ -56,11 +57,22 @@
         "data_description": {
           "tag_prefix": "Tags are named <prefix>.<entity_id>, e.g. ha.sensor.pool_temp.",
           "include_domains": "With no includes set, everything not excluded is exported.",
+          "export_attributes": "Attribute names (e.g. brightness, current_temperature). Numeric values export as <prefix>.<entity_id>.<attribute> tags, including on attribute-only changes.",
           "import_tags": "Hourly mean/min/max — temperatures, pressures, rates. Use for tags from other collectors, not tags exported from HA.",
           "import_counter_tags": "Cumulative meters (energy, water, gas) — imported as hourly state + sum, meter-reset aware, usable in the Energy dashboard.",
           "live_tags": "Each tag becomes a sensor entity polling the latest value."
         }
       }
+    }
+  },
+  "issues": {
+    "buffer_overflow": {
+      "title": "Timebase export buffer overflowed",
+      "description": "The store-and-forward buffer for dataset {dataset} exceeded its limit while the historian was unreachable — the oldest samples were dropped. The gap is permanent (the historian rejects late writes). Check historian connectivity; this issue clears on the next successful flush."
+    },
+    "write_failure": {
+      "title": "Timebase writes failing",
+      "description": "Writes to dataset {dataset} have been failing for over 15 minutes: {error}. Samples are buffering (bounded) and will flush in order on recovery. Check the historian container, Pulse tokens, and TLS trust."
     }
   },
   "services": {

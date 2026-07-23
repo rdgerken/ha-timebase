@@ -27,6 +27,7 @@ CONF_INCLUDE_DOMAINS = "include_domains"
 CONF_INCLUDE_ENTITY_GLOBS = "include_entity_globs"
 CONF_EXCLUDE_ENTITY_GLOBS = "exclude_entity_globs"
 CONF_EXPORT_STRING_STATES = "export_string_states"
+CONF_EXPORT_ATTRIBUTES = "export_attributes"
 
 DEFAULT_EXPORT_ENABLED = True
 DEFAULT_TAG_PREFIX = "ha"

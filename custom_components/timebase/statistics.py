@@ -60,6 +60,32 @@ def tag_to_statistic_id(tag: str) -> str:
     return f"{DOMAIN}:{slug}"
 
 
+def accumulate_counter(
+    readings: dict[datetime, float],
+    prev_state: float | None,
+    prev_sum: float,
+) -> list[dict[str, Any]]:
+    """Turn hourly meter readings into state+sum statistics rows.
+
+    Meter-reset aware: a reading lower than the previous one counts its full
+    value as the delta (consumption since the reset). Pure function so the
+    math is unit-testable.
+    """
+    stats: list[dict[str, Any]] = []
+    for bucket_start in sorted(readings):
+        state = readings[bucket_start]
+        if prev_state is None:
+            delta = 0.0  # first ever import: establish the baseline
+        elif state < prev_state:
+            delta = state  # meter reset: count from zero
+        else:
+            delta = state - prev_state
+        prev_sum += delta
+        prev_state = state
+        stats.append({"start": bucket_start, "state": state, "sum": prev_sum})
+    return stats
+
+
 def _floor_hour(when: datetime) -> datetime:
     return when.replace(minute=0, second=0, microsecond=0)
 
@@ -277,20 +303,7 @@ class TimebaseStatisticsImporter:
                 else 0.0
             )
 
-        stats: list[dict[str, Any]] = []
-        for bucket_start in sorted(readings):
-            state = readings[bucket_start]
-            if prev_state is None:
-                delta = 0.0  # first ever import: establish the baseline
-            elif state < prev_state:
-                delta = state  # meter reset: count from zero
-            else:
-                delta = state - prev_state
-            prev_sum += delta
-            prev_state = state
-            stats.append(
-                {"start": bucket_start, "state": state, "sum": prev_sum}
-            )
+        stats = accumulate_counter(readings, prev_state, prev_sum)
 
         async_add_external_statistics(
             self._hass, self._metadata(tag, is_counter=True), stats

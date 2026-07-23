@@ -35,6 +35,7 @@ from .const import (
     ATTR_VALUE,
     CONF_DATASET,
     CONF_EXCLUDE_ENTITY_GLOBS,
+    CONF_EXPORT_ATTRIBUTES,
     CONF_EXPORT_ENABLED,
     CONF_EXPORT_STRING_STATES,
     CONF_IMPORT_COUNTER_TAGS,
@@ -140,6 +141,8 @@ async def async_setup_entry(
             opts.get(CONF_TAG_PREFIX, DEFAULT_TAG_PREFIX),
             entity_filter,
             opts.get(CONF_EXPORT_STRING_STATES, False),
+            export_attributes=opts.get(CONF_EXPORT_ATTRIBUTES, []),
+            entry_id=entry.entry_id,
         )
         data.exporter.async_start()
 

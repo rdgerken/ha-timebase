@@ -32,7 +32,11 @@ timestamped TVQ (time/value/quality) samples:
   sample flagged **quality 24** (source comms lost) so trends show the gap
   instead of interpolating across it; HA shutdown posts a **quality 28**
   (collector shutdown) dataset status marker.
-- Store-and-forward: samples buffer in order while the historian is down.
+- Store-and-forward: samples buffer in order while the historian is down;
+  Repair issues surface buffer overflow and persistent write failures.
+- Opt-in **attribute export**: name the attributes (e.g. `brightness`,
+  `current_temperature`) and their numeric values export as
+  `<prefix>.<entity_id>.<attribute>` tags — including on attribute-only changes.
 - Include/exclude filtering by domain and entity glob.
 
 **Import (Timebase → HA)** — for tags collected from *other* sources (plant or
@@ -116,7 +120,7 @@ historian rejects every token with issuer errors (IDX10204):
    so it re-mints with the right SAN. Then restart the historian so it
    re-fetches the discovery metadata.
 
-## Known limitations (v0.2)
+## Known limitations
 
 - **Timebase drops out-of-order writes — silently.** Empirically verified
   against a live historian: any sample older than a tag's newest stored point
@@ -127,18 +131,17 @@ historian rejects every token with issuer errors (IDX10204):
 - Counter imports establish their baseline on first import (the first
   imported hour contributes 0 to the sum); consumption accumulates from
   there.
-- State **attributes** are not exported (roadmap).
-- Read-response parsing is defensive; verify against your historian's
-  Swagger at `http://<host>:4511/api/help` if data looks off.
+- API payload shapes were verified against a live Timebase **1.3.x**
+  historian (they differ from the published docs in several places); other
+  versions may drift — `http://<host>:4511/api/help` is the ground truth.
 
 ## Roadmap
 
 - [ ] One-time recorder → Timebase migration tool (fresh tags only)
-- [ ] Attribute export
 - [ ] Home Assistant **Add-on** wrapping the official Timebase Docker image
       (one-click for HAOS users)
-- [ ] Repair issues for buffer overflow / persistent write failures
-- [ ] Tests + Integration Quality Scale checklist
+- [ ] Integration Quality Scale tiering (test suite + hassfest/HACS CI ship
+      today; the formal checklist climb is ongoing)
 
 ## Disclaimer
 
