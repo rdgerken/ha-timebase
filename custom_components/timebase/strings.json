@@ -57,7 +57,7 @@
         "data_description": {
           "tag_prefix": "Tags are named <prefix>.<entity_id>, e.g. ha.sensor.pool_temp.",
           "include_domains": "With no includes set, everything not excluded is exported.",
-          "export_attributes": "Attribute names (e.g. brightness, current_temperature). Numeric values export as <prefix>.<entity_id>.<attribute> tags, including on attribute-only changes.",
+          "export_attributes": "Attribute names (e.g. brightness, current_temperature). Numeric values export as prefix.entity_id.attribute tags, including on attribute-only changes.",
           "import_tags": "Hourly mean/min/max — temperatures, pressures, rates. Use for tags from other collectors, not tags exported from HA.",
           "import_counter_tags": "Cumulative meters (energy, water, gas) — imported as hourly state + sum, meter-reset aware, usable in the Energy dashboard.",
           "live_tags": "Each tag becomes a sensor entity polling the latest value."

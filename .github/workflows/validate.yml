@@ -13,6 +13,10 @@ jobs:
       - uses: home-assistant/actions/hassfest@master
   hacs:
     runs-on: ubuntu-latest
+    # HACS validation needs a PUBLIC repo for its API-side checks (manifest/
+    # hacs.json fetches return None on private repos). Non-blocking until the
+    # repo goes public — remove continue-on-error at that point.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: hacs/action@main
