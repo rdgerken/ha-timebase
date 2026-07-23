@@ -13,8 +13,11 @@ historian):
   GET tags returns {"User": [...], "System": [...]}; GET data returns
   {"s": start, "e": end, "tl": [{"t": <tagmeta>, "d": [tvq, ...]}, ...]}.
 
-IMPORTANT: Timebase ignores TVQs whose timestamp is older than the tag's
-newest stored point — callers must write in chronological order per tag.
+IMPORTANT (empirically verified): Timebase SILENTLY drops any TVQ whose
+timestamp is older than the tag's newest stored point — even within the
+current hour block — while still returning HTTP 200. The only evidence is a
+"late data rejected" warning in the historian's log. Callers must write in
+strict chronological order per tag; backfill works into fresh tags only.
 """
 
 from __future__ import annotations

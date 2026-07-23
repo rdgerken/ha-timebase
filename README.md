@@ -118,9 +118,12 @@ historian rejects every token with issuer errors (IDX10204):
 
 ## Known limitations (v0.2)
 
-- **Timebase ignores out-of-order writes** — samples older than a tag's
-  newest point are dropped by the historian. The exporter preserves order, but
-  historical backfill into existing tags is not possible by design.
+- **Timebase drops out-of-order writes — silently.** Empirically verified
+  against a live historian: any sample older than a tag's newest stored point
+  is rejected, even by 5 minutes within the current hour block, and **the API
+  still returns 200** (the only signal is a "late data rejected" warning in
+  the historian's log). The exporter therefore preserves strict per-tag order;
+  historical backfill works into *fresh* tags only.
 - Counter imports establish their baseline on first import (the first
   imported hour contributes 0 to the sum); consumption accumulates from
   there.
