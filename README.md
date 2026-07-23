@@ -83,6 +83,76 @@ and statistics features keep working.
 4. Open the integration's **Configure** dialog to set export filters and
    import tags.
 
+## Using the data in dashboards
+
+Two kinds of data come back from the historian, and they feed **different card
+families**:
+
+### 1. Imported statistics → `statistics-graph` cards
+
+Tags you list under **"Measurement tags"** / **"Counter tags"** in the
+integration's options are aggregated hourly into HA's native long-term
+statistics store, under IDs of the form `timebase:<tag_slug>` (dots become
+underscores — find yours under **Developer Tools → Statistics**, filter
+"timebase"). These are *statistic IDs, not entities* — they work in any
+statistics card:
+
+```yaml
+# Measurement tag: hourly mean with a min/max band
+type: statistics-graph
+title: Pool water — hourly mean / min / max
+period: hour
+days_to_show: 7
+stat_types: [mean, min, max]
+entities:
+  - entity: timebase:ha_sensor_pool_water_temperature
+    name: Pool water
+```
+
+```yaml
+# Counter tag (energy/water/gas): consumption per hour as bars
+type: statistics-graph
+title: Energy — hourly consumption
+chart_type: bar
+period: hour
+days_to_show: 2
+stat_types: [change]
+entities:
+  - timebase:energy_meter
+```
+
+Counter statistics carry `state` + monotonic `sum` (meter-reset aware) — the
+same shape HA's own utility meters produce.
+
+### 2. Live tag sensors → any normal card
+
+Tags listed under **"Tags to expose as live sensors"** become ordinary sensor
+entities (named `sensor.timebase_historian_<tag>`) with `quality` and
+`source_timestamp` attributes. Use them anywhere an entity works — tiles,
+gauges, `history-graph`, conditions in automations:
+
+```yaml
+type: tile
+entity: sensor.timebase_historian_dataset_writes
+name: Historian write rate
+icon: mdi:pulse
+```
+
+Tip: exposing the historian's own **System tags** (`Dataset.Writes`,
+`Dataset.Tags`, `Dataset.Size`, `Process.Memory`) as live sensors gives you a
+"historian health" section on any dashboard — the historian monitoring itself
+from inside HA.
+
+### Worked example
+
+A complete sections-view dashboard combining all of the above (trend graphs,
+counter bars, live health tiles) is in
+[`docs/example-dashboard.yaml`](docs/example-dashboard.yaml) — paste the view
+into any storage-mode dashboard via the raw configuration editor.
+
+![Trend and counter cards](docs/images/statistics-cards.png)
+![Historian health tiles](docs/images/health-tiles.png)
+
 ## Authentication (Timebase Pulse)
 
 Open historians need no credentials. If your system is secured with

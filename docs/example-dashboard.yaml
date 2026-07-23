@@ -1,0 +1,78 @@
+# Example sections view showcasing Timebase data in native Lovelace cards.
+# Paste as a view into any storage-mode dashboard (raw configuration editor),
+# then swap the timebase:* statistic IDs and sensor entity IDs for your own
+# (Developer Tools -> Statistics, filter "timebase", for the former).
+type: sections
+title: Timebase
+path: timebase
+icon: mdi:chart-timeline-variant
+max_columns: 3
+sections:
+  - type: grid
+    cards:
+      - type: heading
+        heading: Long-term trends
+        heading_style: title
+        icon: mdi:chart-line
+      - type: statistics-graph
+        title: Pool water — hourly mean / min / max
+        chart_type: line
+        period: hour
+        days_to_show: 7
+        stat_types: [mean, min, max]
+        entities:
+          - entity: timebase:ha_sensor_pool_water_temperature
+            name: Pool water
+      - type: statistics-graph
+        title: Mains voltage — sag/swell band
+        chart_type: line
+        period: hour
+        days_to_show: 2
+        stat_types: [min, max, mean]
+        entities:
+          - entity: timebase:ha_sensor_s31_05_voltage
+            name: Voltage
+  - type: grid
+    cards:
+      - type: heading
+        heading: Counter statistics
+        heading_style: title
+        icon: mdi:meter-electric
+      - type: statistics-graph
+        title: Energy — hourly consumption
+        chart_type: bar
+        period: hour
+        days_to_show: 2
+        stat_types: [change]
+        entities:
+          - entity: timebase:energy_meter
+            name: Consumption
+      - type: tile
+        entity: sensor.timebase_historian_energy_meter
+        name: Meter reading (live from historian)
+        icon: mdi:meter-electric
+  - type: grid
+    cards:
+      - type: heading
+        heading: Historian health — live System tags
+        heading_style: title
+        icon: mdi:heart-pulse
+      - type: sensor
+        entity: sensor.timebase_historian_dataset_writes
+        name: Write rate
+        graph: line
+        hours_to_show: 6
+        detail: 2
+        icon: mdi:pulse
+      - type: tile
+        entity: sensor.timebase_historian_dataset_tags
+        name: Tags historized
+        icon: mdi:tag-multiple
+      - type: tile
+        entity: sensor.timebase_historian_dataset_size
+        name: Dataset size
+        icon: mdi:database
+      - type: tile
+        entity: sensor.timebase_historian_process_memory
+        name: Historian memory
+        icon: mdi:memory

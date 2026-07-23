@@ -25,7 +25,7 @@ async def _start_flow(hass: HomeAssistant):
     )
 
 
-async def test_user_flow_creates_entry(hass: HomeAssistant):
+async def test_user_flow_creates_entry(recorder_mock, hass: HomeAssistant):
     result = await _start_flow(hass)
     assert result["type"] is FlowResultType.FORM
 
