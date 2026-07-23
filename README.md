@@ -150,8 +150,12 @@ counter bars, live health tiles) is in
 [`docs/example-dashboard.yaml`](docs/example-dashboard.yaml) — paste the view
 into any storage-mode dashboard via the raw configuration editor.
 
+<!-- Screenshots pending:
 ![Trend and counter cards](docs/images/statistics-cards.png)
 ![Historian health tiles](docs/images/health-tiles.png)
+-->
+*(Screenshots coming — the example view above is running live and renders
+exactly as configured.)*
 
 ## Authentication (Timebase Pulse)
 

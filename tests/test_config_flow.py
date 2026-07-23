@@ -25,7 +25,9 @@ async def _start_flow(hass: HomeAssistant):
     )
 
 
-async def test_user_flow_creates_entry(recorder_mock, hass: HomeAssistant):
+async def test_user_flow_creates_entry(
+    recorder_mock, enable_custom_integrations, hass: HomeAssistant
+):
     result = await _start_flow(hass)
     assert result["type"] is FlowResultType.FORM
 
@@ -43,7 +45,9 @@ async def test_user_flow_creates_entry(recorder_mock, hass: HomeAssistant):
     assert result["data"]["dataset"] == "HomeAssistant"
 
 
-async def test_user_flow_cannot_connect(hass: HomeAssistant):
+async def test_user_flow_cannot_connect(
+    recorder_mock, enable_custom_integrations, hass: HomeAssistant
+):
     result = await _start_flow(hass)
     with patch(
         "custom_components.timebase.config_flow.TimebaseClient"
@@ -58,7 +62,9 @@ async def test_user_flow_cannot_connect(hass: HomeAssistant):
     assert result["errors"] == {"base": "cannot_connect"}
 
 
-async def test_user_flow_partial_pulse_fields_rejected(hass: HomeAssistant):
+async def test_user_flow_partial_pulse_fields_rejected(
+    recorder_mock, enable_custom_integrations, hass: HomeAssistant
+):
     result = await _start_flow(hass)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],

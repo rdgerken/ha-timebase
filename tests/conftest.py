@@ -1,9 +1,6 @@
-"""Shared fixtures for ha-timebase tests."""
+"""Shared fixtures for ha-timebase tests.
 
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations):
-    """Enable loading custom integrations in all tests."""
-    yield
+No autouse fixtures on purpose: `recorder_mock` must be instantiated BEFORE
+`hass` (the plugin asserts this), so tests request their fixtures explicitly
+in the right order — e.g. (recorder_mock, enable_custom_integrations, hass).
+"""
