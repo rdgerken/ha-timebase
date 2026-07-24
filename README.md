@@ -75,6 +75,14 @@ and statistics features keep working.
 1. Run a Timebase historian —
    [Docker quick-start](https://timebase.flow-software.com/en/knowledge-base/quick-start-for-docker)
    or the Windows installer. Note the REST API port (default **4511**).
+
+   > 💡 **Memory tip (Docker, homelab-scale):** the Timebase images run
+   > .NET's Server GC default — per-core heaps sized for industrial ingest
+   > rates. At home-automation write rates, adding `DOTNET_gcServer: "0"`
+   > (workstation GC) plus a container memory limit cut the historian from
+   > ~300 to ~96 MiB in our testing, with a 96,000-point query going
+   > 69 → 111 ms — negligible. Skip this if you feed it heavy industrial
+   > collectors; Server GC is the right default there.
 2. HACS → Custom repositories → add this repo (Integration), install
    **Timebase Historian**, restart HA.
 3. Settings → Devices & Services → Add Integration → **Timebase Historian**.
