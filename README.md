@@ -157,6 +157,33 @@ into any storage-mode dashboard via the raw configuration editor.
 *(Screenshots coming — the example view above is running live and renders
 exactly as configured.)*
 
+## Bonus: Grafana straight from the historian
+
+Not part of this integration, but a natural companion (verified working):
+Grafana's signed [Infinity datasource](https://grafana.com/grafana/plugins/yesoreyeram-infinity-datasource/)
+can query the historian's REST API directly — with **quality codes as a
+field**, which no generic TSDB path gives you.
+
+Datasource settings (two non-obvious parts marked ⚠):
+
+- Auth: **OAuth2 → Client credentials**; token URL
+  `https://<pulse-host>:4542/auth/token`, your client ID + secret
+- ⚠ **Auth style: "In Params"** — Pulse only accepts credentials in the POST
+  body; the default (HTTP Basic) fails with *"Invalid client secret provided"*
+- Skip TLS verify (private Pulse CA), and add the historian + Pulse hosts to
+  allowed hosts
+- ⚠ If provisioning from YAML, the secret key is camelCase:
+  `secureJsonData: { oauth2ClientSecret: ... }`, and auth style is
+  `jsonData: { oauth2: { authStyle: 1 } }`
+
+Query (type JSON, backend parser, format time series):
+
+```
+URL:           https://<historian>:4512/api/datasets/<dataset>/data?tagname=<tag>&start=${__from:date:iso}&end=${__to:date:iso}
+Root selector: tl[0].d
+Columns:       t → timestamp | v → number | q → number
+```
+
 ## Authentication (Timebase Pulse)
 
 Open historians need no credentials. If your system is secured with
