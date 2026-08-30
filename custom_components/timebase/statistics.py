@@ -220,7 +220,11 @@ class TimebaseStatisticsImporter:
     async def _async_get_last_stat(
         self, statistic_id: str, types: set[str]
     ) -> dict[str, Any] | None:
-        """Return the newest stored statistics row for an ID, if any."""
+        """Return the newest stored statistics row for an ID, if any.
+
+        `types` must hold members of the recorder's Literal (mean/min/max/
+        state/sum/last_reset); "start" is not one — rows carry it regardless.
+        """
         last = await get_instance(self._hass).async_add_executor_job(
             get_last_statistics, self._hass, 1, statistic_id, False, types
         )
@@ -270,7 +274,7 @@ class TimebaseStatisticsImporter:
 
     async def _async_import_measurement(self, tag: str) -> None:
         statistic_id = tag_to_statistic_id(tag)
-        last_row = await self._async_get_last_stat(statistic_id, {"start"})
+        last_row = await self._async_get_last_stat(statistic_id, {"mean"})
         start, window_end = self._resume_window(last_row)
         if start >= window_end:
             return
@@ -304,7 +308,7 @@ class TimebaseStatisticsImporter:
     async def _async_import_counter(self, tag: str) -> None:
         statistic_id = tag_to_statistic_id(tag)
         last_row = await self._async_get_last_stat(
-            statistic_id, {"start", "state", "sum"}
+            statistic_id, {"state", "sum"}
         )
         start, window_end = self._resume_window(last_row)
         if start >= window_end:

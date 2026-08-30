@@ -93,12 +93,22 @@
   "services": {
     "flush": {
       "name": "Flush export buffer",
-      "description": "Immediately write buffered state changes to the historian."
+      "description": "Immediately write buffered state changes to the historian.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Historian",
+          "description": "Which historian this call targets (required for write when several are configured; flush targets all when empty)."
+        }
+      }
     },
     "write": {
       "name": "Write tag value",
       "description": "Write a single value to a Timebase tag.",
       "fields": {
+        "config_entry_id": {
+          "name": "Historian",
+          "description": "Which historian this call targets (required for write when several are configured; flush targets all when empty)."
+        },
         "tag": {
           "name": "Tag",
           "description": "Timebase tag name."

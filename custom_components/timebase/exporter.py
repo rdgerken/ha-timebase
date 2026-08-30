@@ -187,6 +187,8 @@ class TimebaseExporter:
 
         value = self._convert_state(new_state.state)
         if value is None:
+            # Attributes may have been queued above — still enforce the cap.
+            self._enforce_bound()
             return
 
         meta: dict[str, Any] = {

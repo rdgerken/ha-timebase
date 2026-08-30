@@ -4,13 +4,16 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.components.recorder import get_instance
+from homeassistant.config_entries import SOURCE_REAUTH
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 from homeassistant.components.recorder.statistics import get_last_statistics
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
 )
 
-from custom_components.timebase.api import iso_z
+from custom_components.timebase.api import TimebaseAuthError, iso_z
+from custom_components.timebase.const import DOMAIN
 from custom_components.timebase.statistics import (
     TimebaseStatisticsImporter,
     accumulate_counter,
@@ -114,3 +117,26 @@ async def test_import_lands_in_recorder(recorder_mock, hass):
     rows = stats.get("timebase:plant_temp")
     assert rows, "statistics row never landed — metadata rejected by recorder"
     assert rows[0]["mean"] == 21.0
+
+
+async def test_import_auth_failure_starts_reauth(
+    recorder_mock, enable_custom_integrations, hass
+):
+    """A rotated Pulse secret during import must surface a reauth prompt."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "127.0.0.1", "port": 4512, "dataset": "DS"},
+        unique_id="127.0.0.1:4512:DS",
+    )
+    entry.add_to_hass(hass)
+    client = MagicMock()
+    client.async_get_tags = AsyncMock(side_effect=TimebaseAuthError(401, "revoked"))
+    importer = TimebaseStatisticsImporter(
+        hass, client, "DS", ["plant.temp"], [], entry_id=entry.entry_id
+    )
+    await importer.async_import()
+    await hass.async_block_till_done()
+
+    assert importer.last_error
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert any(f["context"]["source"] == SOURCE_REAUTH for f in flows)

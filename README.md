@@ -54,6 +54,9 @@ pool equipment via OPC UA, MQTT devices, …):
 
 - `timebase.write` — historize a computed value from any automation/script.
 - `timebase.flush` — force the export buffer to write now.
+- Both take an optional `config_entry_id` to pick the historian; `write`
+  requires it when more than one is configured, `flush` targets all by
+  default.
 
 ## Why not just keep everything in recorder?
 
@@ -243,6 +246,12 @@ historian rejects every token with issuer errors (IDX10204):
 - API payload shapes were verified against a live Timebase **1.3.x**
   historian (they differ from the published docs in several places); other
   versions may drift — `http://<host>:4511/api/help` is the ground truth.
+- The store-and-forward buffer lives in memory: reloading the entry (e.g.
+  saving options) or restarting HA discards anything not yet flushed.
+- Statistic IDs are slugified tag names (lowercased, non-alphanumerics →
+  `_`), so two tags that slugify identically (`Plant.Temp` / `plant_temp`)
+  would share one `timebase:*` statistic — give imported tags distinct
+  slugs.
 
 ## Roadmap
 

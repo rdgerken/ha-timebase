@@ -3,6 +3,14 @@ flush:
   description: >-
     Immediately write all buffered state changes to the Timebase historian
     instead of waiting for the next flush interval.
+  fields:
+    config_entry_id:
+      name: Historian
+      description: Which historian to flush. Leave empty to flush all of them.
+      required: false
+      selector:
+        config_entry:
+          integration: timebase
 
 write:
   name: Write tag value
@@ -10,6 +18,15 @@ write:
     Write a single value to a Timebase tag. Useful for historizing computed
     values (template results, script outputs) that are not entities.
   fields:
+    config_entry_id:
+      name: Historian
+      description: >-
+        Which historian to write to. Required when more than one Timebase
+        entry is configured.
+      required: false
+      selector:
+        config_entry:
+          integration: timebase
     tag:
       name: Tag
       description: Timebase tag name (created on first write if missing).

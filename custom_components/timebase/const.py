@@ -65,6 +65,7 @@ BINARY_STATE_MAP = {
 # --- Services ---
 SERVICE_FLUSH = "flush"
 SERVICE_WRITE = "write"
+ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_TAG = "tag"
 ATTR_VALUE = "value"
 ATTR_TIMESTAMP = "timestamp"

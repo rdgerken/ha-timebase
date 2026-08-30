@@ -20,6 +20,7 @@ from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
     ConfigEntryNotReady,
     HomeAssistantError,
+    ServiceValidationError,
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -35,6 +36,7 @@ from .api import (
 )
 from .auth import PulseAuth, PulseAuthError
 from .const import (
+    ATTR_CONFIG_ENTRY_ID,
     ATTR_TAG,
     ATTR_TIMESTAMP,
     ATTR_VALUE,
@@ -85,10 +87,15 @@ TimebaseConfigEntry = ConfigEntry[TimebaseData]
 
 SERVICE_WRITE_SCHEMA = vol.Schema(
     {
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
         vol.Required(ATTR_TAG): cv.string,
         vol.Required(ATTR_VALUE): vol.Any(float, int, bool, cv.string),
         vol.Optional(ATTR_TIMESTAMP): cv.datetime,
     }
+)
+
+SERVICE_FLUSH_SCHEMA = vol.Schema(
+    {vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string}
 )
 
 
@@ -208,17 +215,37 @@ def _async_register_services(hass: HomeAssistant) -> None:
             if hasattr(entry, "runtime_data") and entry.runtime_data
         ]
 
+    def _resolve_entry(call: ServiceCall) -> TimebaseConfigEntry:
+        """Pick the target historian for a service call."""
+        entries = _loaded_entries()
+        if entry_id := call.data.get(ATTR_CONFIG_ENTRY_ID):
+            for entry in entries:
+                if entry.entry_id == entry_id:
+                    return entry
+            raise ServiceValidationError(
+                f"No loaded Timebase config entry with id {entry_id}"
+            )
+        if not entries:
+            raise ServiceValidationError("No Timebase historian is configured")
+        if len(entries) > 1:
+            raise ServiceValidationError(
+                "Multiple Timebase historians are configured — "
+                "pass config_entry_id to pick one"
+            )
+        return entries[0]
+
     async def _handle_flush(call: ServiceCall) -> None:
-        for entry in _loaded_entries():
+        if ATTR_CONFIG_ENTRY_ID in call.data:
+            entries = [_resolve_entry(call)]
+        else:
+            entries = _loaded_entries()  # default: flush every historian
+        for entry in entries:
             if entry.runtime_data.exporter:
                 await entry.runtime_data.exporter.async_flush()
 
     async def _handle_write(call: ServiceCall) -> None:
         """Write an arbitrary TVQ — lets automations historize computed values."""
-        entries = _loaded_entries()
-        if not entries:
-            raise HomeAssistantError("No Timebase historian is configured")
-        entry = entries[0]  # TODO: config_entry_id targeting for multi-historian
+        entry = _resolve_entry(call)
         when = call.data.get(ATTR_TIMESTAMP) or dt_util.utcnow()
         value = call.data[ATTR_VALUE]
         if isinstance(value, bool):
@@ -235,7 +262,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
         except TimebaseError as err:
             raise HomeAssistantError(f"Timebase write failed: {err}") from err
 
-    hass.services.async_register(DOMAIN, SERVICE_FLUSH, _handle_flush)
+    hass.services.async_register(
+        DOMAIN, SERVICE_FLUSH, _handle_flush, schema=SERVICE_FLUSH_SCHEMA
+    )
     hass.services.async_register(
         DOMAIN,
         SERVICE_WRITE,

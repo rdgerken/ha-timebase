@@ -5,9 +5,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.core import Event, State
 from homeassistant.helpers.entityfilter import generate_filter
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.timebase.api import TimebaseAuthError
+from custom_components.timebase.const import DOMAIN
 from custom_components.timebase.exporter import TimebaseExporter, _coerce_numeric
 
 UTC = timezone.utc
@@ -151,3 +155,48 @@ def test_overflow_drops_globally_oldest_across_tags(hass, exporter, monkeypatch)
     # first-registered tag was NOT drained to protect later ones.
     assert [p["v"] for p in exporter._buffer["ha.sensor.a"]] == [3.0, 5.0]
     assert [p["v"] for p in exporter._buffer["ha.sensor.b"]] == [4.0, 6.0]
+
+
+def test_bound_enforced_when_state_not_convertible(hass, exporter, monkeypatch):
+    """Attribute samples queued before a skipped state must still hit the cap."""
+    monkeypatch.setattr(
+        "custom_components.timebase.exporter.MAX_BUFFERED_TVQS", 1
+    )
+    old = _state("light.desk", "fading", {"brightness": 100})
+    new = _state(
+        "light.desk", "shimmering", {"brightness": 200},
+        ts=datetime(2026, 7, 22, 21, 10, tzinfo=UTC),
+    )
+    exporter._handle_event(_event("light.desk", None, old))
+    exporter._handle_event(_event("light.desk", old, new))
+    # non-numeric states are skipped (export_string_states off), but the two
+    # attribute samples count — the cap of 1 must have dropped one of them
+    assert exporter._buffered_count == 1
+
+
+async def test_flush_auth_failure_starts_reauth(
+    recorder_mock, enable_custom_integrations, hass
+):
+    """A rotated Pulse secret during flush must surface a reauth prompt."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "127.0.0.1", "port": 4512, "dataset": "DS"},
+        unique_id="127.0.0.1:4512:DS",
+    )
+    entry.add_to_hass(hass)
+    exporter = TimebaseExporter(
+        hass,
+        AsyncMock(),
+        "DS",
+        "ha",
+        generate_filter([], [], [], []),
+        entry_id=entry.entry_id,
+    )
+    exporter._handle_event(_event("sensor.a", None, _state("sensor.a", "1")))
+    exporter._client.async_write.side_effect = TimebaseAuthError(401, "revoked")
+    await exporter.async_flush()
+    await hass.async_block_till_done()
+
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert any(f["context"]["source"] == SOURCE_REAUTH for f in flows)
+    assert exporter._buffered_count == 1  # sample kept for post-reauth recovery

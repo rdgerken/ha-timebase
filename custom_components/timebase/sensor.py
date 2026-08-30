@@ -39,6 +39,7 @@ class TimebaseLiveCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     def __init__(
         self,
         hass: HomeAssistant,
+        entry,  # TimebaseConfigEntry
         client: TimebaseClient,
         dataset: str,
         tags: list[str],
@@ -46,6 +47,7 @@ class TimebaseLiveCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=f"{DOMAIN}_live",
             update_interval=timedelta(seconds=DEFAULT_LIVE_SCAN_INTERVAL_SECONDS),
         )
@@ -91,7 +93,7 @@ async def async_setup_entry(
     if not tags:
         return
     coordinator = TimebaseLiveCoordinator(
-        hass, entry.runtime_data.client, entry.runtime_data.dataset, tags
+        hass, entry, entry.runtime_data.client, entry.runtime_data.dataset, tags
     )
     entry.runtime_data.coordinator = coordinator
     await coordinator.async_config_entry_first_refresh()
