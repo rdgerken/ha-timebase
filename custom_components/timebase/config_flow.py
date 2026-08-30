@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -14,7 +15,7 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
@@ -74,6 +75,47 @@ STEP_USER_SCHEMA = vol.Schema(
 )
 
 
+async def _async_validate_connection(
+    hass: HomeAssistant, data: dict[str, Any]
+) -> str | None:
+    """Try to reach the historian; return an error key, or None on success."""
+    session = async_get_clientsession(hass)
+    verify_ssl = data.get(CONF_VERIFY_SSL, True)
+    auth = (
+        PulseAuth(
+            session,
+            data[CONF_PULSE_URL],
+            data[CONF_PULSE_CLIENT_ID],
+            data[CONF_PULSE_CLIENT_SECRET],
+            verify_ssl=verify_ssl,
+        )
+        if data.get(CONF_PULSE_URL)
+        else None
+    )
+    try:
+        client = TimebaseClient(
+            session,
+            data[CONF_HOST],
+            data[CONF_PORT],
+            auth=auth,
+            use_ssl=data.get(CONF_USE_SSL, False),
+            verify_ssl=verify_ssl,
+        )
+        await client.async_get_datasets()
+    except TimebaseConnectionError:
+        return "cannot_connect"
+    except PulseAuthError:
+        return "invalid_auth"
+    except TimebaseError as err:
+        if getattr(err, "status", None) in (401, 403):
+            return "invalid_auth"
+        return "invalid_response"
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Unexpected error validating Timebase")
+        return "unknown"
+    return None
+
+
 class TimebaseConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle initial setup of a Timebase historian connection."""
 
@@ -96,49 +138,58 @@ class TimebaseConfigFlow(ConfigFlow, domain=DOMAIN):
             pulse_fields = (pulse_url, client_id, client_secret)
             if any(pulse_fields) and not all(pulse_fields):
                 errors["base"] = "pulse_incomplete"
+            elif error := await _async_validate_connection(self.hass, user_input):
+                errors["base"] = error
             else:
-                session = async_get_clientsession(self.hass)
-                verify_ssl = user_input.get(CONF_VERIFY_SSL, True)
-                auth = (
-                    PulseAuth(
-                        session,
-                        pulse_url,
-                        client_id,
-                        client_secret,
-                        verify_ssl=verify_ssl,
-                    )
-                    if pulse_url
-                    else None
+                return self.async_create_entry(
+                    title=f"Timebase ({user_input[CONF_HOST]})",
+                    data=user_input,
                 )
-                try:
-                    client = TimebaseClient(
-                        session,
-                        user_input[CONF_HOST],
-                        user_input[CONF_PORT],
-                        auth=auth,
-                        use_ssl=user_input.get(CONF_USE_SSL, False),
-                        verify_ssl=verify_ssl,
-                    )
-                    await client.async_get_datasets()
-                except TimebaseConnectionError:
-                    errors["base"] = "cannot_connect"
-                except PulseAuthError:
-                    errors["base"] = "invalid_auth"
-                except TimebaseError as err:
-                    if getattr(err, "status", None) in (401, 403):
-                        errors["base"] = "invalid_auth"
-                    else:
-                        errors["base"] = "invalid_response"
-                except Exception:  # noqa: BLE001
-                    _LOGGER.exception("Unexpected error validating Timebase")
-                    errors["base"] = "unknown"
-                else:
-                    return self.async_create_entry(
-                        title=f"Timebase ({user_input[CONF_HOST]})",
-                        data=user_input,
-                    )
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors
+        )
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
+        """The historian or Pulse rejected the stored credentials."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Collect fresh Pulse credentials and revalidate the connection."""
+        errors: dict[str, str] = {}
+        entry = self._get_reauth_entry()
+        if user_input is not None:
+            data = {**entry.data, **user_input}
+            if error := await _async_validate_connection(self.hass, data):
+                errors["base"] = error
+            else:
+                return self.async_update_reload_and_abort(entry, data=data)
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_PULSE_URL,
+                    default=entry.data.get(CONF_PULSE_URL, ""),
+                ): TextSelector(TextSelectorConfig(type=TextSelectorType.URL)),
+                vol.Required(
+                    CONF_PULSE_CLIENT_ID,
+                    default=entry.data.get(CONF_PULSE_CLIENT_ID, ""),
+                ): str,
+                vol.Required(CONF_PULSE_CLIENT_SECRET): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "host": entry.data[CONF_HOST],
+                "dataset": entry.data[CONF_DATASET],
+            },
         )
 
     @staticmethod

@@ -8,6 +8,7 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -16,7 +17,13 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .api import TimebaseClient, TimebaseError, unit_from_meta
+from .api import (
+    TimebaseAuthError,
+    TimebaseClient,
+    TimebaseError,
+    unit_from_meta,
+)
+from .auth import PulseAuthError
 from .const import (
     CONF_LIVE_TAGS,
     DEFAULT_LIVE_SCAN_INTERVAL_SECONDS,
@@ -51,6 +58,8 @@ class TimebaseLiveCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         """Fetch tag metadata (units) once."""
         try:
             metas = await self.client.async_get_tags(self.dataset)
+        except (PulseAuthError, TimebaseAuthError) as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
         except TimebaseError as err:
             raise UpdateFailed(f"Cannot read tag metadata: {err}") from err
         by_name = {m.get("n"): m for m in metas if isinstance(m, dict)}
@@ -61,6 +70,10 @@ class TimebaseLiveCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         try:
             # No start time => Timebase returns the latest point per tag.
             data = await self.client.async_read(self.dataset, self.tags)
+        except (PulseAuthError, TimebaseAuthError) as err:
+            # Rotated/revoked Pulse credentials: trigger a reauth flow
+            # instead of retrying forever.
+            raise ConfigEntryAuthFailed(str(err)) from err
         except TimebaseError as err:
             raise UpdateFailed(str(err)) from err
         return {
@@ -91,7 +104,6 @@ class TimebaseTagSensor(CoordinatorEntity[TimebaseLiveCoordinator], SensorEntity
     """Latest value of a single Timebase tag."""
 
     _attr_has_entity_name = True
-    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
         self,
@@ -119,6 +131,17 @@ class TimebaseTagSensor(CoordinatorEntity[TimebaseLiveCoordinator], SensorEntity
     def native_value(self) -> Any:
         tvq = (self.coordinator.data or {}).get(self._tag)
         return tvq.get("v") if tvq else None
+
+    @property
+    def state_class(self) -> SensorStateClass | None:
+        """Measurement — but only while the tag's value is numeric.
+
+        The API contract allows string TVQ values; a hardcoded MEASUREMENT
+        would trip HA's non-numeric-state warning on those tags.
+        """
+        if isinstance(self.native_value, (int, float)):
+            return SensorStateClass.MEASUREMENT
+        return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

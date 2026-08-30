@@ -47,8 +47,8 @@ pool equipment via OPC UA, MQTT devices, …):
   Measurement tags import as mean/min/max; **counter tags** (energy, water,
   gas meters) import as state + cumulative sum — meter-reset aware, resumable
   without double-counting, and usable in the Energy dashboard.
-- **Live sensors**: any tag as a polling sensor entity with quality + source
-  timestamp attributes.
+- **Live sensors**: any tag as a polling sensor entity with quality, source
+  timestamp, dataset, and tag attributes.
 
 **Services**
 
@@ -135,8 +135,8 @@ same shape HA's own utility meters produce.
 ### 2. Live tag sensors → any normal card
 
 Tags listed under **"Tags to expose as live sensors"** become ordinary sensor
-entities (named `sensor.timebase_historian_<tag>`) with `quality` and
-`source_timestamp` attributes. Use them anywhere an entity works — tiles,
+entities (named `sensor.timebase_historian_<tag>`) with `quality`,
+`source_timestamp`, `dataset`, and `tag` attributes. Use them anywhere an entity works — tiles,
 gauges, `history-graph`, conditions in automations:
 
 ```yaml

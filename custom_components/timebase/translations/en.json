@@ -24,6 +24,20 @@
           "pulse_client_id": "A Pulse client allowed the client-credentials grant with the Historian audience (e.g. the built-in Collector client, or a dedicated HomeAssistant client).",
           "pulse_client_secret": "The secret for that Pulse client."
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate with Timebase Pulse",
+        "description": "The historian at {host} (dataset {dataset}) rejected the stored credentials — the Pulse client secret was likely rotated or revoked. Enter the current Pulse credentials.",
+        "data": {
+          "pulse_url": "Pulse URL",
+          "pulse_client_id": "Pulse client ID",
+          "pulse_client_secret": "Pulse client secret"
+        },
+        "data_description": {
+          "pulse_url": "Base URL of your Timebase Pulse identity provider, e.g. http://pulse-host:PORT.",
+          "pulse_client_id": "A Pulse client allowed the client-credentials grant with the Historian audience.",
+          "pulse_client_secret": "The current secret for that Pulse client."
+        }
       }
     },
     "error": {
@@ -34,7 +48,8 @@
       "unknown": "Unexpected error — see logs."
     },
     "abort": {
-      "already_configured": "This historian and dataset are already configured."
+      "already_configured": "This historian and dataset are already configured.",
+      "reauth_successful": "Re-authentication was successful."
     }
   },
   "options": {
@@ -84,9 +99,18 @@
       "name": "Write tag value",
       "description": "Write a single value to a Timebase tag.",
       "fields": {
-        "tag": { "name": "Tag", "description": "Timebase tag name." },
-        "value": { "name": "Value", "description": "Value to write." },
-        "timestamp": { "name": "Timestamp", "description": "Optional sample time (defaults to now)." }
+        "tag": {
+          "name": "Tag",
+          "description": "Timebase tag name."
+        },
+        "value": {
+          "name": "Value",
+          "description": "Value to write."
+        },
+        "timestamp": {
+          "name": "Timestamp",
+          "description": "Optional sample time (defaults to now)."
+        }
       }
     }
   }

@@ -128,3 +128,26 @@ async def test_flush_failure_requeues_in_front_then_succeeds(hass, exporter):
     assert exporter._buffered_count == 0
     assert exporter.samples_sent == 1
     assert exporter.last_error is None
+
+
+def test_overflow_drops_globally_oldest_across_tags(hass, exporter, monkeypatch):
+    """Overflow loss spreads by sample age, not by tag registration order."""
+    monkeypatch.setattr(
+        "custom_components.timebase.exporter.MAX_BUFFERED_TVQS", 4
+    )
+    prev = {}
+    for minute, entity in enumerate(
+        ("sensor.a", "sensor.b", "sensor.a", "sensor.b", "sensor.a", "sensor.b"),
+        start=1,
+    ):
+        st = _state(
+            entity, str(minute), ts=datetime(2026, 7, 22, 21, minute, tzinfo=UTC)
+        )
+        exporter._handle_event(_event(entity, prev.get(entity), st))
+        prev[entity] = st
+
+    assert exporter.samples_dropped == 2
+    # The two globally oldest samples (a@21:01, b@21:02) are gone; the
+    # first-registered tag was NOT drained to protect later ones.
+    assert [p["v"] for p in exporter._buffer["ha.sensor.a"]] == [3.0, 5.0]
+    assert [p["v"] for p in exporter._buffer["ha.sensor.b"]] == [4.0, 6.0]

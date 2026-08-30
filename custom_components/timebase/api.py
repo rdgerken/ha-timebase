@@ -55,6 +55,15 @@ class TimebaseApiError(TimebaseError):
         self.status = status
 
 
+class TimebaseAuthError(TimebaseApiError):
+    """The historian rejected the request as unauthenticated/forbidden.
+
+    Raised on 401/403 (after the one automatic Pulse token refresh) so
+    callers can tell a rotated/revoked credential — which needs reauth —
+    apart from a transient API failure, which just needs a retry.
+    """
+
+
 def unit_from_meta(meta: dict[str, Any]) -> str | None:
     """Extract a unit string from Timebase tag metadata.
 
@@ -133,6 +142,8 @@ class TimebaseClient:
                         continue
                     if resp.status >= 400:
                         text = await resp.text()
+                        if resp.status in (401, 403):
+                            raise TimebaseAuthError(resp.status, text[:500])
                         raise TimebaseApiError(resp.status, text[:500])
                     if resp.content_type == "application/json":
                         return await resp.json()
@@ -141,7 +152,7 @@ class TimebaseClient:
                 raise TimebaseConnectionError(
                     f"Cannot reach Timebase at {url}: {err}"
                 ) from err
-        raise TimebaseApiError(401, "Unauthorized after token refresh")
+        raise TimebaseAuthError(401, "Unauthorized after token refresh")
 
     # --- Datasets -----------------------------------------------------------
 

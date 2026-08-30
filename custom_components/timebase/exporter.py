@@ -36,7 +36,8 @@ from homeassistant.helpers.entityfilter import EntityFilter
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from .api import TimebaseClient, TimebaseError, iso_z
+from .api import TimebaseAuthError, TimebaseClient, TimebaseError, iso_z
+from .auth import PulseAuthError
 from .const import (
     BINARY_STATE_MAP,
     DEFAULT_FLUSH_INTERVAL_SECONDS,
@@ -239,18 +240,28 @@ class TimebaseExporter:
             return state if self._export_strings else None
 
     def _enforce_bound(self) -> None:
-        """Drop oldest samples when the store-and-forward buffer overflows."""
+        """Drop the globally oldest sample when the buffer overflows.
+
+        Per-tag lists are append-ordered, so each list's head is that tag's
+        oldest sample; iso_z timestamps are fixed-width UTC strings, so
+        comparing them lexicographically is chronological. Together that
+        makes the oldest head across all tags the oldest buffered sample —
+        overflow loss spreads by age instead of draining whichever tag
+        happened to be registered first.
+        """
         dropped_now = False
         while self._buffered_count > MAX_BUFFERED_TVQS:
-            for tag, tvqs in self._buffer.items():
-                if tvqs:
-                    tvqs.pop(0)
-                    self._buffered_count -= 1
-                    self.samples_dropped += 1
-                    dropped_now = True
-                    break
-            else:
+            oldest = min(
+                (tvqs for tvqs in self._buffer.values() if tvqs),
+                key=lambda tvqs: tvqs[0]["t"],
+                default=None,
+            )
+            if oldest is None:
                 break
+            oldest.pop(0)
+            self._buffered_count -= 1
+            self.samples_dropped += 1
+            dropped_now = True
         if dropped_now and not self._overflow_issue:
             self._overflow_issue = True
             ir.async_create_issue(
@@ -338,8 +349,20 @@ class TimebaseExporter:
                 self._buffer[tag] = tvqs + self._buffer[tag]
             self._buffered_count += count
             self._enforce_bound()
+            if isinstance(err, (PulseAuthError, TimebaseAuthError)):
+                # Rotated/revoked Pulse credentials: retrying alone cannot
+                # recover — prompt for new ones (core dedupes the flow).
+                self._async_start_reauth()
         finally:
             self._flushing = False
+
+    @callback
+    def _async_start_reauth(self) -> None:
+        """Ask HA to reprompt for Pulse credentials (deduped by core)."""
+        if self._entry_id and (
+            entry := self._hass.config_entries.async_get_entry(self._entry_id)
+        ):
+            entry.async_start_reauth(self._hass)
 
     async def _async_provision_tags(self, tags: set[str]) -> None:
         """Upsert tag metadata for tags we have not provisioned yet."""

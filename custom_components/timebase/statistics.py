@@ -35,7 +35,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from .api import TimebaseClient, TimebaseError, unit_from_meta
+from .api import TimebaseAuthError, TimebaseClient, TimebaseError, unit_from_meta
+from .auth import PulseAuthError
 from .const import (
     DEFAULT_IMPORT_INTERVAL_MINUTES,
     DOMAIN,
@@ -52,6 +53,18 @@ try:  # pragma: no cover - version shim
 except ImportError:  # pragma: no cover
     StatisticMeanType = None  # type: ignore[assignment]
     _HAS_MEAN_TYPE = False
+
+# unit_class became a StatisticsMeta column in HA 2025.11. The recorder passes
+# external-statistics metadata straight into the model constructor
+# (StatisticsMeta.from_meta -> StatisticsMeta(**meta), no key filtering), so
+# sending the key to an older schema raises TypeError in the recorder thread.
+# Probe the column itself — the exact thing that would reject the kwarg.
+try:  # pragma: no cover - version shim
+    from homeassistant.components.recorder.db_schema import StatisticsMeta
+
+    _HAS_UNIT_CLASS = hasattr(StatisticsMeta, "unit_class")
+except ImportError:  # pragma: no cover
+    _HAS_UNIT_CLASS = False
 
 
 def tag_to_statistic_id(tag: str) -> str:
@@ -100,10 +113,12 @@ class TimebaseStatisticsImporter:
         dataset: str,
         measurement_tags: list[str],
         counter_tags: list[str],
+        entry_id: str = "",
     ) -> None:
         self._hass = hass
         self._client = client
         self._dataset = dataset
+        self._entry_id = entry_id
         # A tag listed in both is treated as a counter.
         self._counter_tags = list(dict.fromkeys(counter_tags))
         self._measurement_tags = [
@@ -125,7 +140,9 @@ class TimebaseStatisticsImporter:
             timedelta(minutes=DEFAULT_IMPORT_INTERVAL_MINUTES),
         )
         # Kick off an initial import shortly after startup.
-        self._hass.async_create_task(self.async_import())
+        self._hass.async_create_background_task(
+            self.async_import(), name=f"{DOMAIN} initial statistics import"
+        )
 
     def async_stop(self) -> None:
         if self._unsub:
@@ -147,9 +164,20 @@ class TimebaseStatisticsImporter:
             for tag in self._counter_tags:
                 await self._async_import_counter(tag)
             self.last_error = None
+        except (PulseAuthError, TimebaseAuthError) as err:
+            self.last_error = str(err)
+            _LOGGER.warning("Timebase statistics import failed: %s", err)
+            self._async_start_reauth()
         except TimebaseError as err:
             self.last_error = str(err)
             _LOGGER.warning("Timebase statistics import failed: %s", err)
+
+    def _async_start_reauth(self) -> None:
+        """Ask HA to reprompt for Pulse credentials (deduped by core)."""
+        if self._entry_id and (
+            entry := self._hass.config_entries.async_get_entry(self._entry_id)
+        ):
+            entry.async_start_reauth(self._hass)
 
     # --- Shared helpers -----------------------------------------------------
 
@@ -214,9 +242,10 @@ class TimebaseStatisticsImporter:
             "statistic_id": tag_to_statistic_id(tag),
             "name": f"Timebase {tag}",
             "unit_of_measurement": self._units.get(tag),
-            "unit_class": None,  # no unit conversion (required key on newer HA)
             "has_sum": is_counter,
         }
+        if _HAS_UNIT_CLASS:
+            metadata["unit_class"] = None  # no unit conversion
         if _HAS_MEAN_TYPE:
             metadata["mean_type"] = (
                 StatisticMeanType.NONE if is_counter

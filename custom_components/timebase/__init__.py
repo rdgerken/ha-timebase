@@ -16,19 +16,24 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entityfilter import generate_filter
 from homeassistant.util import dt as dt_util
 
 from .api import (
+    TimebaseAuthError,
     TimebaseClient,
     TimebaseConnectionError,
     TimebaseError,
     iso_z,
 )
-from .auth import PulseAuth
+from .auth import PulseAuth, PulseAuthError
 from .const import (
     ATTR_TAG,
     ATTR_TIMESTAMP,
@@ -115,6 +120,10 @@ async def async_setup_entry(
         await client.async_ensure_dataset(
             dataset, entry.data.get(CONF_RETENTION_DAYS, DEFAULT_RETENTION_DAYS)
         )
+    except (PulseAuthError, TimebaseAuthError) as err:
+        # Rotated/revoked Pulse credentials — retrying cannot recover;
+        # this starts a reauth flow prompting for new ones.
+        raise ConfigEntryAuthFailed(str(err)) from err
     except TimebaseConnectionError as err:
         raise ConfigEntryNotReady(str(err)) from err
     except TimebaseError as err:
@@ -151,7 +160,8 @@ async def async_setup_entry(
     counter_tags = opts.get(CONF_IMPORT_COUNTER_TAGS, [])
     if import_tags or counter_tags:
         data.importer = TimebaseStatisticsImporter(
-            hass, client, dataset, import_tags, counter_tags
+            hass, client, dataset, import_tags, counter_tags,
+            entry_id=entry.entry_id,
         )
         data.importer.async_start()
 
@@ -170,7 +180,13 @@ async def async_unload_entry(
         data.importer.async_stop()
     if data.exporter:
         await data.exporter.async_stop()
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok and not hass.config_entries.async_loaded_entries(DOMAIN):
+        # Last historian gone — the services could only raise from here on.
+        # (Reloads re-register them in async_setup_entry.)
+        hass.services.async_remove(DOMAIN, SERVICE_FLUSH)
+        hass.services.async_remove(DOMAIN, SERVICE_WRITE)
+    return unload_ok
 
 
 async def _async_update_listener(
